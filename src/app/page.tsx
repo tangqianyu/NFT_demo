@@ -12,14 +12,30 @@ import { parseEther } from 'viem';
 type Address = `0x${string}`;
 
 export default function Home() {
-  const { data: hash, writeContract } = useWriteContract();
+  const { data: hash, isPending, writeContract } = useWriteContract();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const { isConnected, address } = useAccount();
   const [image, setImage] = useState('');
   const [url, setURL] = useState('');
+  const [canGenerate, setCanGenerate] = useState(false);
+  const [canMint, setCanMint] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [isUpload, setIsUpload] = useState(false);
 
-  useEffect(() => {}, []);
+  useEffect(() => {
+    if (isConnected && !!name && !!description) {
+      setCanGenerate(true);
+    } else {
+      setCanGenerate(false);
+    }
+  }, [isConnected, name, description]);
+
+  useEffect(() => {
+    if (image && !isPending) {
+      setCanMint(true);
+    }
+  }, [image, isPending]);
 
   const getImage = async () => {
     const res = await fetch('https://api.edenai.run/v2/image/generation', {
@@ -36,10 +52,7 @@ export default function Home() {
       })
     }).then((res) => res.json());
 
-    const img = `data:png;base64,` + res.stabilityai.items[0].image;
-    setImage(img);
-
-    return res.stabilityai.items[0].image;
+    setImage(res.stabilityai.items[0].image);
   };
 
   const handleSubmit = async () => {
@@ -47,13 +60,14 @@ export default function Home() {
       return;
     }
 
-    const base64Image = await getImage();
-
-    const storageUrl = await uploadImage(base64ToBlob(base64Image));
-
-    console.log('storageUrl', storageUrl);
-
-    mintNft(storageUrl);
+    setLoading(true);
+    setCanGenerate(false);
+    await getImage();
+    setLoading(false);
+    setCanGenerate(true);
+    // const storageUrl = await uploadImage(base64ToBlob(base64Image));
+    // console.log('storageUrl', storageUrl);
+    // mintNft(storageUrl);
   };
 
   const uploadImage = async (imageData: Blob) => {
@@ -73,7 +87,13 @@ export default function Home() {
     return url;
   };
 
-  const mintNft = async (token: string) => {
+  const mintNft = async () => {
+    setIsUpload(true);
+
+    const token = await uploadImage(base64ToBlob(image));
+
+    setIsUpload(false);
+
     writeContract({
       address: AiNft['address'] as Address,
       abi: AiNft['abi'],
@@ -84,60 +104,85 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen p-12">
-      <div className="flex justify-between mb-10">
-        <div className="text-xl font-bold">AI NFT Generator</div>
-        <ConnectButton label="Connect" />
+    <div className="relative min-h-screen">
+      {hash ? (
+        <div className="bg-green-200 border-green-600 text-green-600 border-l-4 p-4 w-full md:w-1/2 mx-auto">
+          <p className="font-bold">Success</p>
+          <p>
+            You can see your transaction on{' '}
+            <a className="text-indigo-600 underline" href={`https://sepolia.etherscan.io/tx/${hash}`}>
+              {`https://sepolia.etherscan.io/tx/${hash}`}
+            </a>
+          </p>
+        </div>
+      ) : null}
+
+      <div className="mb-10 text-center relative p-12">
+        <div className="text-2xl font-bold mx-auto text-indigo-600">AI NFT Generator</div>
+        <div className="absolute right-5 top-10">
+          <ConnectButton label="Connect" />
+        </div>
       </div>
-      {isConnected ? (
-        <>
-          <div className="flex gap-16 justify-center">
-            <div className="flex flex-col">
-              <div>
-                <div className="mb-3">
-                  <input
-                    name="name"
-                    type="text"
-                    onChange={(e) => {
-                      setName(e.target.value);
-                    }}
-                    className="block pl-2 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600"
-                    placeholder="input name..."
-                  />
-                </div>
-                <div className="mb-3">
-                  <input
-                    name="description"
-                    type="text"
-                    onChange={(e) => {
-                      setDescription(e.target.value);
-                    }}
-                    className="block pl-2 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600"
-                    placeholder="input description..."
-                  />
-                </div>
-                <div>
-                  <button
-                    className="flex justify-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white"
-                    onClick={() => {
-                      handleSubmit();
-                    }}
-                  >
-                    Generate
-                  </button>
-                </div>
-              </div>
-            </div>
-            {!image ? (
-              <div className="w-40 h-40 border"></div>
-            ) : (
-              <div className="w-40 h-40 border">
-                <img className="w-full h-full" src={image} alt="" />
-              </div>
-            )}
+
+      <div className="w-full md:w-1/3 mx-auto">
+        <div className="mb-10">
+          <div className="mb-5">
+            <input
+              name="name"
+              type="text"
+              onChange={(e) => {
+                setName(e.target.value);
+              }}
+              className="block pl-2 w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600"
+              placeholder="input name..."
+            />
           </div>
-          {hash && <div className="mt-3">Transaction Hash: {hash}</div>}
-        </>
+          <div className="mb-5">
+            <textarea
+              name="description"
+              onChange={(e) => {
+                setDescription(e.target.value);
+              }}
+              className="block w-full pl-2 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600"
+              placeholder="input description..."
+            />
+          </div>
+          <div className="flex gap-3">
+            <button
+              disabled={!canGenerate}
+              className={`flex justify-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white ${!canGenerate ? 'opacity-50' : ''}`}
+              onClick={() => {
+                handleSubmit();
+              }}
+            >
+              Generate
+            </button>
+            <button
+              disabled={!canMint}
+              className={`flex justify-center rounded-md text-indigo-600 px-3 py-1.5 text-sm font-semibold border border-indigo-600 ${!canMint ? 'opacity-50' : ''}`}
+              onClick={() => {
+                mintNft();
+              }}
+            >
+              Mint
+            </button>
+          </div>
+        </div>
+      </div>
+      {!image ? (
+        <div className="w-48 h-48 border-2 text-xl border-indigo-600 mx-auto font-bold flex items-center justify-center">{loading ? 'Loading...' : ''}</div>
+      ) : (
+        <div className="w-48 h-48 mx-auto">
+          <img className="w-full h-full" src={`data:png;base64,${image}`} alt="" />
+        </div>
+      )}
+      {/* {hash && <div className="mt-3">Transaction Hash: {hash}</div>} */}
+      {isUpload || isPending ? (
+        <div className="h-full w-full absolute flex flex-col items-center justify-center top-0 bg-[rgba(0,0,0,.45)]">
+          <div className="border-gray-300 h-20 w-20 animate-spin rounded-full border-8 border-t-blue-600" />
+          {isUpload ? <div className="mt-3 text-xl text-white font-bold">Uploading</div> : null}
+          {isPending ? <div className="mt-3 text-xl text-white font-bold">Pending</div> : null}
+        </div>
       ) : null}
     </div>
   );
